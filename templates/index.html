@@ -60,7 +60,7 @@
       <label>Inflation (CPI) for indexation (% a year)
         <input type="number" name="cpi" value="{{ p.cpi }}" min="0" max="15" step="0.1">
       </label>
-      <label>Purchase costs paid in {{ p.purchase_year }} ($)
+      <label>Purchase costs - stamp duty, legal fees ($)
         <input type="number" name="purchase_costs" value="{{ p.purchase_costs|int }}" min="0" step="any">
       </label>
     </div>
@@ -103,6 +103,7 @@
     <div class="tax">
       <div class="row"><span>Capital gains tax</span><strong>{{ x.cgt|money }}</strong></div>
       <div class="row"><span>Top tax bracket reached</span><strong>{{ (x.top_rate*100)|round|int }}%{% if x.topup > 0 %} (30% minimum applies){% endif %}</strong></div>
+      {% if x.new_rules %}<div class="row"><span>30% minimum tax on post-2027 gain</span><strong>{% if x.real_post <= 0 %}No gain to tax{% elif x.topup > 0 %}Top-up {{ x.topup|money }}{% else %}Applied, no top-up needed{% endif %}</strong></div>{% endif %}
       <div class="row"><span>Tax as a share of your gain</span><strong>{{ x.effective_rate|pct(1) }}</strong></div>
     </div>
 
@@ -171,6 +172,9 @@
         <tr><td>&nbsp;&nbsp;taxed after the 50% discount</td>{% for s in scenarios %}<td class="num">{{ f[s].pre_taxable|money }}</td>{% endfor %}</tr>
         <tr><td>1 July 2027 value after inflation indexation to the sale</td>{% for s in scenarios %}<td class="num">{{ f[s].indexed_base|money }}</td>{% endfor %}</tr>
         <tr><td>Gain after 1 July 2027, above inflation</td>{% for s in scenarios %}<td class="num">{{ f[s].real_post|money }}</td>{% endfor %}</tr>
+        <tr><td>&nbsp;&nbsp;tax on it at your bracket rates</td>{% for s in scenarios %}<td class="num">{{ f[s].tax_post|money }}</td>{% endfor %}</tr>
+        <tr><td>&nbsp;&nbsp;tax on it at the 30% minimum</td>{% for s in scenarios %}<td class="num">{{ f[s].min_tax_amount|money }}</td>{% endfor %}</tr>
+        <tr class="sub"><td>Top-up added (the higher of the two applies)</td>{% for s in scenarios %}<td class="num">{{ f[s].topup|money }}</td>{% endfor %}</tr>
       </tbody>
     </table>
   </div>
@@ -180,8 +184,9 @@
 <details class="card notes">
   <summary>Assumptions and limits - please read</summary>
   <ul>
-    <li><strong>Proposed law.</strong> The 2026-27 Federal Budget announced replacing the 50% CGT discount with CPI indexation and a 30% minimum tax on gains made from 1 July 2027. These changes were still proposals when this was built. Check the final legislation.</li>
-    <li>Gains up to 1 July 2027 keep the 50% discount; only growth after that date is indexed and subject to the minimum tax. Your value on 1 July 2027 is estimated from today's price using the scenario growth rate. A real valuation will be needed for your tax return.</li>
+    <li><strong>New CGT rules.</strong> The 2026-27 Federal Budget replaces the 50% CGT discount with CPI indexation and a 30% minimum tax on gains made from 1 July 2027. Reports say the legislation passed Parliament in June 2026. The detailed calculation method is still being clarified by the ATO, so confirm it with a tax agent.</li>
+    <li><strong>30% minimum tax.</strong> It applies to the gain made after 1 July 2027 (above inflation). If your tax brackets already tax that part at 30% or more, no extra tax is added, so the top-up often shows $0. It bites when your other income is low and the gain is small. Here the older, discounted gain is taxed first and the newer gain sits on top of it. The official ordering is not yet confirmed.</li>
+    <li>Gains up to 1 July 2027 keep the 50% discount; only growth after that date is indexed and subject to the 30% minimum tax. Your value on 1 July 2027 is estimated from today's price using the scenario growth rate. A real valuation will be needed for your tax return.</li>
     <li>Treated as an investment property owned by an Australian tax resident, held over 12 months, with no main residence exemption.</li>
     <li>Selling costs (agent fees and renovation/cleaning) are deducted from the gain made after 1 July 2027. Renovation spend is not separately indexed.</li>
     <li>2026-27 resident tax rates are used (15% second bracket, 14% for sales from 2028), with the brackets held flat and a 2% Medicare levy added. Offsets and the Medicare levy surcharge are ignored.</li>

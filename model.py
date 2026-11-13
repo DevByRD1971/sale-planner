@@ -2,13 +2,13 @@
 
 Rules modelled
 --------------
-* Sale on or before 30 June 2027  -> current rules: 50% CGT discount on the whole gain.
-* Sale after 1 July 2027          -> 2026-27 Federal Budget proposal (NOT yet law):
+* Sale on or before 30 June 2027  -> 50% CGT discount on the whole gain.
+* Sale after 1 July 2027          -> 2026-27 Budget CGT reform (passed Parliament June 2026):
     - gain up to the market value on 1 July 2027 keeps the 50% discount
     - gain after 1 July 2027 is "real" (value above the CPI-indexed 1 July 2027 value)
-      and is subject to a 30% minimum tax rate
-* Resident income tax rates for 2026-27 (the 16% -> 15% cut from 1 July 2026,
-  and 14% from 1 July 2027 are already legislated). Brackets held flat.
+      and is taxed at your marginal rate, but never less than 30% (minimum tax)
+* Resident income tax rates: 2026-27 (15% second bracket), 14% from 2027-28.
+  Brackets held flat.
 * 2% Medicare levy added on the taxable gain.
 
 All of this is a planning estimate, not tax advice.
@@ -40,33 +40,38 @@ class Inputs:
     cpi: float = 2.5                   # % p.a. used for indexation
 
 
-def brackets_for(sale_year):
-    """(upper limit, rate) for the financial year ending 30 June of sale_year."""
-    r2 = 0.14 if sale_year >= 2028 else 0.15
+def financial_year(d: date) -> int:
+    """Financial year ending 30 June (e.g. 15 Nov 2026 -> 2027)."""
+    return d.year + (1 if d.month >= 7 else 0)
+
+
+def brackets_for(fy):
+    """(upper limit, rate) for the financial year ending 30 June of `fy`."""
+    r2 = 0.14 if fy >= 2028 else 0.15
     return [(18_200, 0.0), (45_000, r2), (135_000, 0.30), (190_000, 0.37), (float("inf"), 0.45)]
 
 
-def bracket_rows(sale_year):
+def bracket_rows(fy):
     rows, lower = [], 0
-    for upper, rate in brackets_for(sale_year):
+    for upper, rate in brackets_for(fy):
         rows.append({"lower": lower, "upper": upper, "rate": rate})
         lower = upper
     return rows
 
 
-def tax_on(income, sale_year):
+def tax_on(income, fy):
     tax, lower = 0.0, 0.0
-    for upper, rate in brackets_for(sale_year):
+    for upper, rate in brackets_for(fy):
         if income > lower:
             tax += (min(income, upper) - lower) * rate
         lower = upper
     return tax
 
 
-def allocate(base, amount, sale_year):
+def allocate(base, amount, fy):
     """How much of `amount`, stacked on top of `base` income, lands in each bracket."""
     out, lower = [], 0
-    for upper, rate in brackets_for(sale_year):
+    for upper, rate in brackets_for(fy):
         start, end = max(base, lower), min(base + amount, upper)
         out.append(max(0.0, end - start))
         lower = upper
@@ -78,8 +83,9 @@ def value_at(current, growth_pct, when, today):
     return current * (1 + growth_pct / 100) ** years
 
 
-def evaluate(p: Inputs, growth_pct: float, sale_year: int, today: date):
-    sale_price = value_at(p.current_price, growth_pct, date(sale_year, 6, 30), today)
+def evaluate(p: Inputs, growth_pct: float, sale_date: date, today: date):
+    fy = financial_year(sale_date)
+    sale_price = value_at(p.current_price, growth_pct, sale_date, today)
     v2027 = value_at(p.current_price, growth_pct, TRANSITION, today)
 
     agent_fees = sale_price * p.agent_pct / 100
@@ -88,13 +94,13 @@ def evaluate(p: Inputs, growth_pct: float, sale_year: int, today: date):
     profit_before_tax = sale_price - selling_costs - cost_base
 
     base = p.other_income
-    new_rules = sale_year > 2027
+    new_rules = sale_date >= TRANSITION
     pre_gain = post_nominal = real_post = indexed_base = 0.0
 
     if not new_rules:
         pre_adj = max(profit_before_tax, 0.0)
     else:
-        n = sale_year - 2027
+        n = (sale_date - TRANSITION).days / 365.25
         pre_gain = v2027 - cost_base
         post_nominal = (sale_price - selling_costs) - v2027
         indexed_base = v2027 * (1 + p.cpi / 100) ** n
@@ -110,17 +116,18 @@ def evaluate(p: Inputs, growth_pct: float, sale_year: int, today: date):
     pre_taxable = pre_adj * DISCOUNT
     taxable_gain = pre_taxable + real_post
 
-    tax_pre = tax_on(base + pre_taxable, sale_year) - tax_on(base, sale_year)
-    tax_post = tax_on(base + taxable_gain, sale_year) - tax_on(base + pre_taxable, sale_year)
+    tax_pre = tax_on(base + pre_taxable, fy) - tax_on(base, fy)
+    tax_post = tax_on(base + taxable_gain, fy) - tax_on(base + pre_taxable, fy)
     bracket_tax = tax_pre + tax_post
-    topup = max(0.0, MIN_TAX * real_post - tax_post) if real_post > 0 else 0.0
+    min_tax_amount = MIN_TAX * real_post
+    topup = max(0.0, min_tax_amount - tax_post) if real_post > 0 else 0.0
     if topup < 0.5:
         topup = 0.0
     medicare = MEDICARE * taxable_gain
     cgt = bracket_tax + topup + medicare
 
-    alloc = allocate(base, taxable_gain, sale_year)
-    rows = bracket_rows(sale_year)
+    alloc = allocate(base, taxable_gain, fy)
+    rows = bracket_rows(fy)
     top_idx = 0
     for i, amt in enumerate(alloc):
         if amt > 0:
@@ -143,6 +150,8 @@ def evaluate(p: Inputs, growth_pct: float, sale_year: int, today: date):
         "pre_taxable": pre_taxable,
         "indexed_base": indexed_base,
         "real_post": real_post,
+        "tax_post": tax_post,
+        "min_tax_amount": min_tax_amount,
         "taxable_gain": taxable_gain,
         "total_taxable_income": base + taxable_gain,
         "alloc": alloc,
@@ -163,14 +172,17 @@ def run(p: Inputs, today: date):
         "Realistic": p.g_realistic,
         "Optimistic": p.g_optimistic,
     }
-    final = {k: evaluate(p, g, p.sale_year, today) for k, g in growth.items()}
+    final_date = date(p.sale_year, 6, 30)
+    final = {k: evaluate(p, g, final_date, today) for k, g in growth.items()}
 
-    years = list(range(2027, p.sale_year + 1))
+    # Year-by-year: a sale today, then the chosen year of sale and the next three years.
+    points = [(f"Now ({today.year})", today)]
+    points += [(str(y), date(y, 6, 30)) for y in range(p.sale_year, p.sale_year + 4)]
     table = []
-    for y in years:
-        row = {"year": y}
+    for label, d in points:
+        row = {"year": label}
         for k, g in growth.items():
-            r = evaluate(p, g, y, today)
+            r = evaluate(p, g, d, today)
             row[k] = {"price": r["sale_price"], "cgt": r["cgt"], "net": r["net_profit"]}
         table.append(row)
 
@@ -179,7 +191,7 @@ def run(p: Inputs, today: date):
     return {
         "final": final,
         "table": table,
-        "bracket_rows": bracket_rows(p.sale_year),
+        "bracket_rows": bracket_rows(financial_year(final_date)),
         "hist_growth": hist * 100,
         "gain_to_date": p.current_price - p.purchase_price,
         "years_held": years_held,

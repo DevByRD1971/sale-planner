@@ -6,6 +6,8 @@ from functools import wraps
 from flask import Flask, render_template, request, redirect, url_for, session
 
 from model import Inputs, run, SCENARIOS
+from rental_model import RentalInputs, compute as rental_compute
+from super_model import SuperInputs, project as super_project
 
 app = Flask(__name__)
 app.config.update(
@@ -110,10 +112,77 @@ def index():
     )
 
 
+def read_rental():
+    d = RentalInputs()
+    e = []
+    n = lambda name, default, label, lo=0, hi=100_000_000: _num(name, default, lo, hi, e, label)
+    status = request.args.get("status", d.status)
+    if status not in ("before", "after", "new"):
+        status = d.status
+    fy = int(_num("tax_fy", d.tax_fy, 2027, 2028, e, "Tax year", True))
+    r = RentalInputs(
+        weekly_rent=n("weekly_rent", d.weekly_rent, "Rent per week", 0, 100_000),
+        vacant_weeks=n("vacant_weeks", d.vacant_weeks, "Vacant weeks", 0, 52),
+        agent_pct=n("agent_pct", d.agent_pct, "Agent fee (%)", 0, 30),
+        mgmt_extra=n("mgmt_extra", d.mgmt_extra, "Additional management expenses"),
+        council=n("council", d.council, "Council rates"),
+        esl=n("esl", d.esl, "Emergency Services Levy"),
+        water=n("water", d.water, "Water"),
+        insurance=n("insurance", d.insurance, "Insurance"),
+        building_mgmt=n("building_mgmt", d.building_mgmt, "Building management"),
+        repairs=n("repairs", d.repairs, "General repairs"),
+        land_tax=n("land_tax", d.land_tax, "Land tax"),
+        loan=n("loan", d.loan, "Bank loan"),
+        rate=n("rate", d.rate, "Loan interest rate (%)", 0, 30),
+        depreciation=n("depreciation", d.depreciation, "Depreciation"),
+        salary=n("salary", d.salary, "Annual taxable income"),
+        tax_fy=fy,
+        status=status,
+        property_value=n("property_value", d.property_value, "Property value", 0, 100_000_000),
+    )
+    return r, e
+
+
 @app.route("/rental")
 @login_required
 def rental():
-    return render_template("rental.html", active="rental")
+    r, errors = read_rental()
+    return render_template("rental.html", r=r, c=rental_compute(r), errors=errors, active="rental")
+
+
+def read_super():
+    d = SuperInputs()
+    e = []
+    n = lambda name, default, label, lo=0, hi=100_000_000, integer=False: _num(
+        name, default, lo, hi, e, label, integer)
+    age = n("age", d.age, "Current age", 16, 90, True)
+    s = SuperInputs(
+        balance=n("balance", d.balance, "Super balance"),
+        salary=n("salary", d.salary, "Salary"),
+        employer_pct=n("employer_pct", d.employer_pct, "Employer contribution (%)", 0, 50),
+        personal=n("personal", d.personal, "Personal contribution"),
+        age=age,
+        retire_age=n("retire_age", d.retire_age, "Retirement age", 16, 100, True),
+        show_until=n("show_until", d.show_until, "Show projection until age", 17, 100, True),
+        contrib_tax=n("contrib_tax", d.contrib_tax, "Contributions tax (%)", 0, 50),
+        salary_growth=n("salary_growth", d.salary_growth, "Salary growth (%)", -10, 20),
+    )
+    if s.show_until <= s.age:
+        s.show_until = s.age + 1
+        e.append("The projection must run past your current age, so it was extended by one year.")
+    if s.show_until - s.age > 60:
+        s.show_until = s.age + 60
+        e.append("The table is limited to 60 years.")
+    return s, e
+
+
+@app.route("/super")
+@login_required
+def superannuation():
+    s, errors = read_super()
+    return render_template(
+        "super.html", s=s, t=super_project(s, date.today()), errors=errors, active="super"
+    )
 
 
 @app.route("/healthz")

@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Superannuation - Property Sale Planner{% endblock %}
+{% block content %}
+
+<h1>Superannuation</h1>
+<p class="muted">See what your super could be worth at 30 June each year under different growth rates. Change any value and press <strong>Recalculate</strong>.</p>
+
+{% for e in errors %}<div class="alert">{{ e }}</div>{% endfor %}
+
+<form method="get" action="{{ url_for('superannuation') }}" class="card">
+  <div class="form-grid">
+    <fieldset>
+      <legend>Your super</legend>
+      <label>Past year super balance ($)
+        <input type="number" name="balance" value="{{ s.balance|int }}" min="0" step="any">
+      </label>
+      <p class="hint">Your balance at the last 30 June, from your annual statement.</p>
+      <label>Current age
+        <input type="number" name="age" value="{{ s.age }}" min="16" max="90" step="1">
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Contributions</legend>
+      <label>Salary ($ a year)
+        <input type="number" name="salary" value="{{ s.salary|int }}" min="0" step="any">
+      </label>
+      <label>Employer contribution (% of salary)
+        <input type="number" name="employer_pct" value="{{ s.employer_pct }}" min="0" max="50" step="0.1">
+      </label>
+      <label>Personal contribution ($ a year)
+        <input type="number" name="personal" value="{{ s.personal|int }}" min="0" step="any">
+      </label>
+      <p class="hint">Extra amount you choose to add yourself. Leave at 0 if none.</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Timing</legend>
+      <label>Retirement age (contributions stop)
+        <input type="number" name="retire_age" value="{{ s.retire_age }}" min="16" max="100" step="1">
+      </label>
+      <label>Show the table until age
+        <input type="number" name="show_until" value="{{ s.show_until }}" min="17" max="100" step="1">
+      </label>
+    </fieldset>
+  </div>
+
+  <details class="advanced">
+    <summary>Advanced assumptions</summary>
+    <div class="form-grid adv">
+      <label>Tax the fund takes from employer contributions (%)
+        <input type="number" name="contrib_tax" value="{{ s.contrib_tax }}" min="0" max="50" step="0.1">
+      </label>
+      <label>Salary growth (% a year)
+        <input type="number" name="salary_growth" value="{{ s.salary_growth }}" min="-10" max="20" step="0.1">
+      </label>
+    </div>
+    <p class="hint">Funds normally deduct 15% contributions tax from employer contributions. Set it to 0 to ignore it. Salary growth is 0% by default, so contributions stay flat.</p>
+  </details>
+
+  <div class="actions">
+    <button type="submit" class="btn">Recalculate</button>
+    <a href="{{ url_for('superannuation') }}" class="btn ghost">Reset to defaults</a>
+  </div>
+</form>
+
+{% set rr = t.retire_row %}
+{% if rr %}
+<h2>Balance at age {{ s.retire_age }} (30 June {{ rr.fy }})</h2>
+<section class="cards">
+  {% for r in t.highlight %}
+  <article class="card scen {{ ['conservative','realistic','optimistic'][loop.index0] }}">
+    <header><h3>{{ ['Conservative','Realistic','Optimistic'][loop.index0] }}</h3><span class="badge">{{ r }}% a year</span></header>
+    <div class="big">{{ rr.balances[r]|money }}</div>
+    <div class="cap">Projected super balance</div>
+  </article>
+  {% endfor %}
+</section>
+<p class="hint">Contributions added between now and age {{ s.retire_age }}: about {{ t.total_contrib_to_retire|money }}, after contributions tax.</p>
+{% else %}
+<div class="alert">Your retirement age ({{ s.retire_age }}) is not within the years shown, so no retirement-age balance is displayed.</div>
+{% endif %}
+
+<h2>Projected balance by year</h2>
+<div class="card">
+  <div class="chartbox"><canvas id="superChart" aria-label="Super balance by age for three growth rates"></canvas></div>
+</div>
+
+<h2>Year by year</h2>
+<div class="card">
+  <p class="hint" style="margin-top:0">Balances at 30 June of each financial year (the date of your annual statement). Each column is a yearly growth rate after fees and earnings tax.</p>
+  <div class="tablewrap supertable">
+    <table>
+      <thead>
+        <tr>
+          <th>Financial year</th>
+          <th class="num">Age</th>
+          <th class="num">Added in year</th>
+          {% for r in t.rates %}<th class="num">{{ r }}%</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in t.rows %}
+        <tr class="{{ 'retire' if row.retire }}{{ ' startrow' if row.start }}">
+          <td>{% if row.start %}Now: 30 Jun {{ row.fy }}{% else %}FY{{ '%02d'|format(row.fy % 100) }}: 30 Jun {{ row.fy }}{% endif %}</td>
+          <td class="num">{{ row.age }}</td>
+          <td class="num">{% if row.start %}-{% elif row.contrib > 0 %}{{ row.contrib|money }}{% else %}$0{% endif %}</td>
+          {% for r in t.rates %}<td class="num">{{ row.balances[r]|money }}</td>{% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="hint">The highlighted row is the year you reach age {{ s.retire_age }}. After it, no more contributions are added and the balance only grows.</p>
+</div>
+
+<details class="card notes">
+  <summary>Assumptions and limits - please read</summary>
+  <ul>
+    <li>The first row is your starting balance. The next row is the financial year ending 30 June {{ t.first_fy }}, and your age is shown as it will be on that date ({{ s.age }} now, {{ s.age + 1 }} then).</li>
+    <li>Contributions are assumed to arrive evenly through the year, so they earn about half a year of growth in the year they are paid.</li>
+    <li>Growth rates are treated as the return after investment fees and tax on earnings. Real results vary year to year, and the figures are not adjusted for inflation.</li>
+    <li>Employer contributions are calculated on your salary and reduced by the contributions tax rate above. Personal contributions are treated as after-tax money with no further tax taken. Contribution limits (caps) are not checked, so confirm them for your situation.</li>
+    <li>The default employer rate is 13% as you asked. The legislated Super Guarantee has been 12% since 1 July 2025, so check what your employer actually pays.</li>
+    <li>This is a planning estimate, not financial or tax advice.</li>
+  </ul>
+</details>
+
+<script src="{{ url_for('static', filename='chart.umd.js') }}"></script>
+<script id="sdata" type="application/json">{{ {'rows': t.rows, 'highlight': t.highlight} | tojson }}</script>
+<script src="{{ url_for('static', filename='super.js') }}"></script>
+{% endblock %}

@@ -1,9 +1,283 @@
 {% extends "base.html" %}
 {% block title %}Rental income - Property Sale Planner{% endblock %}
 {% block content %}
+
 <h1>Rental income</h1>
-<p class="muted">Current rental income calculations will live here.</p>
-<div class="card empty">
-  <p>This page is intentionally blank for now.</p>
+<p class="muted">Enter the yearly figures for one property to see whether it is <strong>negatively or positively geared</strong> and what it does to your tax. Change any value and press <strong>Recalculate</strong>.</p>
+
+{% for e in errors %}<div class="alert">{{ e }}</div>{% endfor %}
+
+<form method="get" action="{{ url_for('rental') }}" class="card">
+  <div class="form-grid">
+    <fieldset>
+      <legend>Income</legend>
+      <label>Rental income per week ($)
+        <input type="number" name="weekly_rent" value="{{ r.weekly_rent|int }}" min="0" step="any">
+      </label>
+      <label>Vacant weeks per year
+        <input type="number" name="vacant_weeks" value="{{ r.vacant_weeks|int }}" min="0" max="52" step="any">
+      </label>
+      <p class="hint">Leave at 0 if you expect the property to be rented all year. Two to three weeks is a common allowance.</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Management</legend>
+      <label>Agent fee (% of rent)
+        <input type="number" name="agent_pct" value="{{ r.agent_pct }}" min="0" max="30" step="0.1">
+      </label>
+      <label>Additional management expenses per year ($)
+        <input type="number" name="mgmt_extra" value="{{ r.mgmt_extra|int }}" min="0" step="any">
+      </label>
+      <p class="hint">Default of $1,200 a year assumes about 1.5 weeks' rent for a new tenant every second year, advertising, a few inspections and admin fees. Agent fees are often 5 to 8% of rent.</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Property costs per year ($)</legend>
+      <label>Council rates
+        <input type="number" name="council" value="{{ r.council|int }}" min="0" step="any">
+      </label>
+      <label>Emergency Services Levy
+        <input type="number" name="esl" value="{{ r.esl|int }}" min="0" step="any">
+      </label>
+      <label>Water
+        <input type="number" name="water" value="{{ r.water|int }}" min="0" step="any">
+      </label>
+      <label>Insurance premium
+        <input type="number" name="insurance" value="{{ r.insurance|int }}" min="0" step="any">
+      </label>
+      <label>Building management
+        <input type="number" name="building_mgmt" value="{{ r.building_mgmt|int }}" min="0" step="any">
+      </label>
+      <label>General repairs
+        <input type="number" name="repairs" value="{{ r.repairs|int }}" min="0" step="any">
+      </label>
+      <label>Land tax
+        <input type="number" name="land_tax" value="{{ r.land_tax|int }}" min="0" step="any">
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Loan and depreciation</legend>
+      <label>Bank loan ($)
+        <input type="number" name="loan" value="{{ r.loan|int }}" min="0" step="any">
+      </label>
+      <label>Loan interest rate (% a year)
+        <input type="number" name="rate" value="{{ r.rate }}" min="0" max="30" step="0.01">
+      </label>
+      <label>Depreciation per year ($)
+        <input type="number" name="depreciation" value="{{ r.depreciation|int }}" min="0" step="any">
+      </label>
+      <p class="hint">Interest is worked out on the full loan (interest-only). Loan repayments that reduce the loan are not a tax deduction.</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Your tax position</legend>
+      <label>Annual taxable income, e.g. salary ($)
+        <input type="number" name="salary" value="{{ r.salary|int }}" min="0" step="any">
+      </label>
+      <label>Tax year
+        <select name="tax_fy">
+          <option value="2027" {{ 'selected' if r.tax_fy == 2027 }}>2026-27 (this financial year)</option>
+          <option value="2028" {{ 'selected' if r.tax_fy == 2028 }}>2027-28 onwards</option>
+        </select>
+      </label>
+      <label>Type of property
+        <select name="status">
+          <option value="before" {{ 'selected' if r.status == 'before' }}>Bought on or before 12 May 2026</option>
+          <option value="after" {{ 'selected' if r.status == 'after' }}>Established home bought after 12 May 2026</option>
+          <option value="new" {{ 'selected' if r.status == 'new' }}>New build</option>
+        </select>
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Optional</legend>
+      <label>Property value ($)
+        <input type="number" name="property_value" value="{{ r.property_value|int }}" min="0" step="any">
+      </label>
+      <p class="hint">Only used for rental yield and loan-to-value. Not used in the tax calculation.</p>
+    </fieldset>
+  </div>
+
+  <div class="actions">
+    <button type="submit" class="btn">Recalculate</button>
+    <a href="{{ url_for('rental') }}" class="btn ghost">Reset to defaults</a>
+  </div>
+</form>
+
+{# ---------- Gearing result ---------- #}
+{% if c.gearing == 'negative' %}
+<section class="gear neg card">
+  <div class="gear-tag">Negatively geared</div>
+  <div class="gear-main">
+    <div class="gear-num">{{ (-c.net_rental)|money }}</div>
+    <div class="gear-sub">tax loss a year after rent, all costs and depreciation</div>
+  </div>
+  <ul class="gear-points">
+    {% if c.quarantined %}
+    <li>Because this is an established home bought after 12 May 2026, the loss <strong>cannot be deducted against your salary</strong> from 1 July 2027. It is carried forward instead, to use against future residential property income or capital gains.</li>
+    <li>Tax effect this year: <strong>none</strong>. Your out-of-pocket cost is the full cash shortfall.</li>
+    {% else %}
+    <li>The loss is deducted from your other income, so your taxable income drops from {{ r.salary|money }} to {{ (r.salary + c.net_rental)|money }}.</li>
+    <li>Your top tax rate is <strong>{{ (c.marginal_salary*100)|round|int }}%</strong> (plus 2% Medicare levy), so each $1 of loss saves about <strong>{{ ((c.marginal_salary + 0.02)*100)|round|int }} cents</strong>.</li>
+    <li>Estimated tax saving: <strong>{{ (-c.tax_effect)|money }}</strong> a year.</li>
+    {% endif %}
+  </ul>
+</section>
+{% elif c.gearing == 'positive' %}
+<section class="gear pos card">
+  <div class="gear-tag">Positively geared</div>
+  <div class="gear-main">
+    <div class="gear-num">{{ c.net_rental|money }}</div>
+    <div class="gear-sub">taxable rental profit a year after all costs and depreciation</div>
+  </div>
+  <ul class="gear-points">
+    <li>This is added to your other income, taking it from {{ r.salary|money }} to {{ (r.salary + c.net_rental)|money }}.</li>
+    <li>Your top tax rate on it is <strong>{{ (c.marginal_with*100)|round|int }}%</strong> (plus 2% Medicare levy).</li>
+    <li>Estimated extra tax: <strong>{{ c.tax_effect|money }}</strong> a year.</li>
+  </ul>
+</section>
+{% else %}
+<section class="gear card">
+  <div class="gear-tag">Neutrally geared</div>
+  <div class="gear-main"><div class="gear-sub">Rent and deductible costs roughly cancel out. No tax effect.</div></div>
+</section>
+{% endif %}
+
+{# ---------- Summary cards ---------- #}
+<h2>Summary (per year)</h2>
+<section class="cards four">
+  <article class="card mini">
+    <div class="cap">Total annual income</div>
+    <div class="big sm">{{ c.gross|money }}</div>
+    <div class="cap">{{ c.weeks|int }} weeks at {{ r.weekly_rent|money }}</div>
+  </article>
+  <article class="card mini">
+    <div class="cap">Total management fees</div>
+    <div class="big sm">{{ c.mgmt_total|money }}</div>
+    <div class="cap">Agent {{ c.agent_fee|money }} + other {{ c.mgmt_extra|money }}</div>
+  </article>
+  <article class="card mini">
+    <div class="cap">Loan interest</div>
+    <div class="big sm">{{ c.interest|money }}</div>
+    <div class="cap">{{ '%.0f'|format(c.interest_share) }}% of your rent</div>
+  </article>
+  <article class="card mini">
+    <div class="cap">Other expenses</div>
+    <div class="big sm">{{ c.other_total|money }}</div>
+    <div class="cap">Plus {{ c.depreciation|money }} depreciation</div>
+  </article>
+</section>
+
+<h2>Your real position</h2>
+<section class="cards">
+  <article class="card scen {{ 'optimistic' if c.after_tax_cash >= 0 else 'realistic' }}">
+    <header><h3>{{ 'Cash gain after tax' if c.after_tax_cash >= 0 else 'Out of pocket after tax' }}</h3></header>
+    <div class="big">{{ (c.after_tax_cash|abs)|money }}</div>
+    <div class="cap">a year</div>
+    <dl>
+      <div><dt>Per month</dt><dd>{{ (c.after_tax_cash|abs / 12)|money }}</dd></div>
+      <div><dt>Per week</dt><dd>{{ (c.after_tax_cash|abs / 52)|money }}</dd></div>
+    </dl>
+  </article>
+  <article class="card scen">
+    <header><h3>Before tax</h3></header>
+    <div class="big">{{ c.cash_before_tax|money }}</div>
+    <div class="cap">Cash in your bank: rent less cash costs. Depreciation is not a cash cost.</div>
+    <dl>
+      <div><dt>Rent received</dt><dd>{{ c.gross|money }}</dd></div>
+      <div><dt>Cash costs</dt><dd>-{{ c.cash_costs|money }}</dd></div>
+    </dl>
+  </article>
+  <article class="card scen">
+    <header><h3>Tax effect</h3></header>
+    <div class="big">{{ (c.tax_effect|abs)|money }}</div>
+    <div class="cap">{{ 'Extra tax to pay' if c.tax_effect > 0.5 else ('Tax saved' if c.tax_effect < -0.5 else 'No change to your tax') }}</div>
+    <dl>
+      <div><dt>Tax without property</dt><dd>{{ c.tax_without|money }}</dd></div>
+      <div><dt>Tax with property</dt><dd>{{ c.tax_with|money }}</dd></div>
+    </dl>
+  </article>
+</section>
+
+<h2>Where the rent goes</h2>
+<div class="card">
+  <div class="chartbox"><canvas id="rentChart" aria-label="Rent income compared with costs"></canvas></div>
 </div>
+
+<h2>Income and expenses</h2>
+<div class="card">
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th></th><th class="num">Per year</th><th class="num">Per month</th><th class="num">Per week</th><th class="num">% of rent</th></tr></thead>
+      <tbody>
+        {% macro line(label, v, cls='') %}
+        <tr class="{{ cls }}"><td>{{ label }}</td><td class="num">{{ v|money }}</td><td class="num">{{ (v/12)|money }}</td><td class="num">{{ (v/52)|money }}</td><td class="num">{{ ('%.1f'|format(v / c.gross * 100) ~ '%') if c.gross else '-' }}</td></tr>
+        {% endmacro %}
+        {{ line('Total annual rental income', c.gross, 'total') }}
+        {{ line('Agent fee (' ~ r.agent_pct ~ '%)', c.agent_fee) }}
+        {{ line('Additional management expenses', c.mgmt_extra) }}
+        {{ line('Total management fees', c.mgmt_total, 'sub') }}
+        {% for name, v in c.other %}{{ line(name, v) }}{% endfor %}
+        {{ line('Total other expenses', c.other_total, 'sub') }}
+        {{ line('Loan interest (' ~ r.rate ~ '%)', c.interest) }}
+        {{ line('Total cash costs', c.cash_costs, 'sub') }}
+        {{ line('Depreciation (not paid in cash)', c.depreciation) }}
+        {{ line('Total tax deductions', c.total_deductions, 'sub') }}
+        {{ line('Net rental result for tax', c.net_rental, 'total') }}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<h2>Your tax bracket</h2>
+<div class="card">
+  <p class="hint" style="margin-top:0">Tax rates for {{ '2026-27' if r.tax_fy == 2027 else '2027-28 onwards' }}, plus the 2% Medicare levy. Your income is shown in each bracket without the property and with its result added.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Taxable income</th><th class="num">Rate</th><th class="num">Salary only</th><th class="num">With the property</th></tr></thead>
+      <tbody>
+        {% for b in c.bracket_rows %}
+        {% set i = loop.index0 %}
+        <tr>
+          <td>{{ b.lower|money }}{% if b.upper < 1e12 %} to {{ b.upper|money }}{% else %} and over{% endif %}</td>
+          <td class="num">{{ (b.rate*100)|round(1)|string|replace('.0','') }}%</td>
+          <td class="num">{{ c.alloc_without[i]|money }}</td>
+          <td class="num">{{ c.alloc_with[i]|money }}</td>
+        </tr>
+        {% endfor %}
+        <tr class="sub"><td colspan="2">Taxable income</td><td class="num">{{ r.salary|money }}</td><td class="num">{{ (r.salary + c.taxable_rental)|money }}</td></tr>
+        <tr class="total"><td colspan="2">Tax and Medicare levy</td><td class="num">{{ c.tax_without|money }}</td><td class="num">{{ c.tax_with|money }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<h2>Other useful numbers</h2>
+<section class="strip">
+  <div><span class="k">Gross rental yield</span><span class="v">{{ '%.1f'|format(c.yield_gross) }}%</span></div>
+  <div><span class="k">Net yield (before loan)</span><span class="v">{{ '%.1f'|format(c.yield_net) }}%</span></div>
+  <div><span class="k">Loan to value</span><span class="v">{{ '%.0f'|format(c.lvr) }}%</span></div>
+  <div><span class="k">Costs as share of rent</span><span class="v">{{ '%.0f'|format(c.expense_ratio) }}%</span></div>
+  <div><span class="k">Rent to cover cash costs</span><span class="v">{{ c.be_cash|money }} a week</span></div>
+  <div><span class="k">Rent to break even for tax</span><span class="v">{{ c.be_tax|money }} a week</span></div>
+  <div><span class="k">Top rate on your salary</span><span class="v">{{ (c.marginal_salary*100)|round|int }}%</span></div>
+  <div><span class="k">Rate on each extra $1 of loss</span><span class="v">{{ ((c.marginal_salary + 0.02)*100)|round|int }} cents saved</span></div>
+</section>
+
+<details class="card notes">
+  <summary>Assumptions and limits - please read</summary>
+  <ul>
+    <li><strong>Gearing</strong> is judged on the tax result: rent minus all deductible costs, including loan interest and depreciation. A property can be negatively geared for tax yet still be close to cash-neutral, because depreciation is a deduction you don't pay in cash.</li>
+    <li><strong>Negative gearing law.</strong> Reports say legislation passed in June 2026 that stops losses on <em>established</em> homes bought after 12 May 2026 being deducted against salary from 1 July 2027. Losses are carried forward. Homes held before that date, and new builds, keep the current treatment. The ATO guidance is still being finalised, so confirm with a tax agent.</li>
+    <li>Interest is calculated on the whole loan for the year (interest-only). Principal repayments are not deductible.</li>
+    <li>Default costs are typical estimates. Check them against your own agent statements, rates notices and insurance. Water assumes you pay only the fixed charges and the tenant pays usage.</li>
+    <li>Tax uses resident rates with brackets held flat and a 2% Medicare levy. Offsets, HELP debt and the Medicare levy surcharge are ignored. Agent fees are entered as a share of rent collected.</li>
+    <li>This is a planning estimate, not tax advice.</li>
+  </ul>
+</details>
+
+<script src="{{ url_for('static', filename='chart.umd.js') }}"></script>
+<script id="rdata" type="application/json">{{ {'gross': c.gross, 'groups': c.groups, 'weeks': c.weeks} | tojson }}</script>
+<script src="{{ url_for('static', filename='rental.js') }}"></script>
 {% endblock %}

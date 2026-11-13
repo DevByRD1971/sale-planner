@@ -23,7 +23,9 @@ Then open http://127.0.0.1:5000
 ## Files
 
 - `app.py` - web pages and login
-- `model.py` - property value and tax calculations (edit rates here)
+- `model.py` - sale price and capital gains tax calculations (edit rates here)
+- `rental_model.py` - rental gearing and tax position
+- `super_model.py` - superannuation projection
 - `templates/`, `static/` - pages, styling, chart
 
 Planning estimate only - not tax or financial advice.
