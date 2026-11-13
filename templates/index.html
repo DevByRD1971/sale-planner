@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}Sale scenarios - Property Sale Planner{% endblock %}
+{% block content %}
+{% set f = r.final %}
+
+<h1>Sale scenarios</h1>
+<p class="muted">Change any value below and press <strong>Recalculate</strong>. Amounts are in Australian dollars, and the sale is assumed to settle on 30 June of the year you choose.</p>
+
+{% for e in errors %}<div class="alert">{{ e }}</div>{% endfor %}
+
+<form method="get" action="{{ url_for('index') }}" class="card">
+  <div class="form-grid">
+    <fieldset>
+      <legend>1. The property</legend>
+      <label>Initial purchase price ($)
+        <input type="number" name="purchase_price" value="{{ p.purchase_price|int }}" min="1" step="1000">
+      </label>
+      <label>Year of purchase
+        <input type="number" name="purchase_year" value="{{ p.purchase_year }}" min="1950" max="{{ today.year }}" step="1">
+      </label>
+      <label>Current price ($)
+        <input type="number" name="current_price" value="{{ p.current_price|int }}" min="1" step="1000">
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>2. Selling</legend>
+      <label>Year of sale
+        <input type="number" name="sale_year" value="{{ p.sale_year }}" min="2027" max="2070" step="1">
+      </label>
+      <label>Renovation and cleaning cost ($)
+        <input type="number" name="renovation" value="{{ p.renovation|int }}" min="0" step="500">
+      </label>
+      <label>Sale agent fees and marketing (% of sale price)
+        <input type="number" name="agent_pct" value="{{ p.agent_pct }}" min="0" max="10" step="0.1">
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>3. Your tax position</legend>
+      <label>Other income in the year of sale ($)
+        <input type="number" name="other_income" value="{{ p.other_income|int }}" min="0" step="1000">
+      </label>
+      <p class="hint">Used to work out which tax brackets the gain falls into.</p>
+    </fieldset>
+  </div>
+
+  <details class="advanced">
+    <summary>Advanced assumptions (growth rates, inflation, purchase costs)</summary>
+    <div class="form-grid adv">
+      <label>Conservative growth (% a year)
+        <input type="number" name="g_conservative" value="{{ p.g_conservative }}" min="-10" max="20" step="0.1">
+      </label>
+      <label>Realistic growth (% a year)
+        <input type="number" name="g_realistic" value="{{ p.g_realistic }}" min="-10" max="20" step="0.1">
+      </label>
+      <label>Optimistic growth (% a year)
+        <input type="number" name="g_optimistic" value="{{ p.g_optimistic }}" min="-10" max="20" step="0.1">
+      </label>
+      <label>Inflation (CPI) for indexation (% a year)
+        <input type="number" name="cpi" value="{{ p.cpi }}" min="0" max="15" step="0.1">
+      </label>
+      <label>Purchase costs paid in {{ p.purchase_year }} ($)
+        <input type="number" name="purchase_costs" value="{{ p.purchase_costs|int }}" min="0" step="500">
+      </label>
+    </div>
+    <p class="hint">Stamp duty and legal fees you paid when buying add to your cost base and reduce the gain. The growth rates are planning assumptions, not forecasts.</p>
+  </details>
+
+  <div class="actions">
+    <button type="submit" class="btn">Recalculate</button>
+    <a href="{{ url_for('index') }}" class="btn ghost">Reset to defaults</a>
+  </div>
+</form>
+
+<section class="strip">
+  <div><span class="k">Gain so far</span><span class="v">{{ r.gain_to_date|money }}</span></div>
+  <div><span class="k">Years held</span><span class="v">{{ r.years_held }}</span></div>
+  <div><span class="k">Your growth since {{ p.purchase_year }}</span><span class="v">{{ '%.1f'|format(r.hist_growth) }}% a year</span></div>
+  <div><span class="k">Tax rules at sale</span><span class="v">{{ 'New (indexation)' if f['Realistic'].new_rules else 'Current (50% discount)' }}</span></div>
+</section>
+
+<h2>Summary for a sale in {{ p.sale_year }}</h2>
+<section class="cards">
+  {% for s in scenarios %}
+  {% set x = f[s] %}
+  <article class="card scen {{ s|lower }}">
+    <header>
+      <h3>{{ s }}</h3>
+      <span class="badge">{{ '%.1f'|format(x.growth) }}% a year</span>
+    </header>
+
+    <div class="big">{{ x.sale_price|money }}</div>
+    <div class="cap">Estimated sale price</div>
+
+    <dl>
+      <div><dt>Value on 1 July 2027</dt><dd>{{ x.v2027|money }}</dd></div>
+      <div><dt>Agent fees and marketing</dt><dd>{{ x.agent_fees|money }}</dd></div>
+      <div><dt>Renovation and cleaning</dt><dd>{{ x.renovation|money }}</dd></div>
+      <div><dt>Profit before tax</dt><dd>{{ x.profit_before_tax|money }}</dd></div>
+    </dl>
+
+    <div class="tax">
+      <div class="row"><span>Capital gains tax</span><strong>{{ x.cgt|money }}</strong></div>
+      <div class="row"><span>Top tax bracket reached</span><strong>{{ (x.top_rate*100)|round|int }}%{% if x.topup > 0 %} (30% minimum applies){% endif %}</strong></div>
+      <div class="row"><span>Tax as a share of your gain</span><strong>{{ x.effective_rate|pct(1) }}</strong></div>
+    </div>
+
+    <div class="profit">
+      <span>Profit after tax</span>
+      <strong>{{ x.net_profit|money }}</strong>
+    </div>
+  </article>
+  {% endfor %}
+</section>
+
+<h2>Year by year</h2>
+<div class="card">
+  <div class="tabs" role="tablist">
+    <button class="tab on" data-metric="price" type="button">Sale price</button>
+    <button class="tab" data-metric="cgt" type="button">Capital gains tax</button>
+    <button class="tab" data-metric="net" type="button">Profit after tax</button>
+  </div>
+  <p class="hint" id="metricHint"></p>
+  <div class="chartbox"><canvas id="chart" aria-label="Chart of the three scenarios by year of sale"></canvas></div>
+  <div class="tablewrap">
+    <table id="yearTable">
+      <thead>
+        <tr><th>If sold in</th>{% for s in scenarios %}<th class="num">{{ s }}</th>{% endfor %}</tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<h2>Tax bracket detail for {{ p.sale_year }}</h2>
+<div class="card">
+  <p class="hint">Your other income of {{ p.other_income|money }} is taxed first. The table shows how much of the <em>taxable</em> gain (after the 50% discount or indexation) lands in each bracket.</p>
+  <div class="tablewrap">
+    <table>
+      <thead>
+        <tr><th>Tax bracket</th><th class="num">Rate</th>{% for s in scenarios %}<th class="num">{{ s }}</th>{% endfor %}</tr>
+      </thead>
+      <tbody>
+        {% for b in r.bracket_rows %}
+        {% set i = loop.index0 %}
+        <tr>
+          <td>{{ b.lower|money }}{% if b.upper < 1e12 %} to {{ b.upper|money }}{% else %} and over{% endif %}</td>
+          <td class="num">{{ (b.rate*100)|round(1)|string|replace('.0','') }}%</td>
+          {% for s in scenarios %}<td class="num">{{ f[s].alloc[i]|money }}</td>{% endfor %}
+        </tr>
+        {% endfor %}
+        <tr class="sub"><td colspan="2">Taxable gain</td>{% for s in scenarios %}<td class="num">{{ f[s].taxable_gain|money }}</td>{% endfor %}</tr>
+        <tr><td colspan="2">Tax from the brackets</td>{% for s in scenarios %}<td class="num">{{ f[s].bracket_tax|money }}</td>{% endfor %}</tr>
+        <tr><td colspan="2">30% minimum tax top-up</td>{% for s in scenarios %}<td class="num">{{ f[s].topup|money }}</td>{% endfor %}</tr>
+        <tr><td colspan="2">Medicare levy (2%)</td>{% for s in scenarios %}<td class="num">{{ f[s].medicare|money }}</td>{% endfor %}</tr>
+        <tr class="total"><td colspan="2">Total capital gains tax</td>{% for s in scenarios %}<td class="num">{{ f[s].cgt|money }}</td>{% endfor %}</tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if f['Realistic'].new_rules %}
+<h2>How the 2027 rule change affects the gain</h2>
+<div class="card">
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th></th>{% for s in scenarios %}<th class="num">{{ s }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        <tr><td>Gain up to 1 July 2027 (value then, less what you paid)</td>{% for s in scenarios %}<td class="num">{{ f[s].pre_gain|money }}</td>{% endfor %}</tr>
+        <tr><td>&nbsp;&nbsp;taxed after the 50% discount</td>{% for s in scenarios %}<td class="num">{{ f[s].pre_taxable|money }}</td>{% endfor %}</tr>
+        <tr><td>1 July 2027 value after inflation indexation to the sale</td>{% for s in scenarios %}<td class="num">{{ f[s].indexed_base|money }}</td>{% endfor %}</tr>
+        <tr><td>Gain after 1 July 2027, above inflation</td>{% for s in scenarios %}<td class="num">{{ f[s].real_post|money }}</td>{% endfor %}</tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<details class="card notes">
+  <summary>Assumptions and limits - please read</summary>
+  <ul>
+    <li><strong>Proposed law.</strong> The 2026-27 Federal Budget announced replacing the 50% CGT discount with CPI indexation and a 30% minimum tax on gains made from 1 July 2027. These changes were still proposals when this was built. Check the final legislation.</li>
+    <li>Gains up to 1 July 2027 keep the 50% discount; only growth after that date is indexed and subject to the minimum tax. Your value on 1 July 2027 is estimated from today's price using the scenario growth rate. A real valuation will be needed for your tax return.</li>
+    <li>Treated as an investment property owned by an Australian tax resident, held over 12 months, with no main residence exemption.</li>
+    <li>Selling costs (agent fees and renovation/cleaning) are deducted from the gain made after 1 July 2027. Renovation spend is not separately indexed.</li>
+    <li>2026-27 resident tax rates are used (15% second bracket, 14% for sales from 2028), with the brackets held flat and a 2% Medicare levy added. Offsets and the Medicare levy surcharge are ignored.</li>
+    <li>Property growth rates are planning assumptions you can change, not predictions.</li>
+    <li>This is a planning estimate, not tax or financial advice. Please confirm figures with a registered tax agent before you decide.</li>
+  </ul>
+</details>
+
+<script src="{{ url_for('static', filename='chart.umd.js') }}"></script>
+<script id="data" type="application/json">{{ {'table': r.table, 'scenarios': scenarios} | tojson }}</script>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+{% endblock %}

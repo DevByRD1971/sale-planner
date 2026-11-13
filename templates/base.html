@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Property Sale Planner{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  {% if session.get('user') %}
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand"><span class="dot"></span> Property Sale Planner</div>
+      <nav>
+        <a href="{{ url_for('index') }}" class="{{ 'on' if active == 'sale' }}">Sale scenarios</a>
+        <a href="{{ url_for('rental') }}" class="{{ 'on' if active == 'rental' }}">Rental income</a>
+        <a href="{{ url_for('logout') }}" class="out">Log out</a>
+      </nav>
+    </div>
+  </header>
+  {% endif %}
+  <main class="wrap">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
