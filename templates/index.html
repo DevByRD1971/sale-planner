@@ -13,13 +13,13 @@
     <fieldset>
       <legend>1. The property</legend>
       <label>Initial purchase price ($)
-        <input type="number" name="purchase_price" value="{{ p.purchase_price|int }}" min="1" step="1000">
+        <input type="number" name="purchase_price" value="{{ p.purchase_price|int }}" min="0" step="any">
       </label>
       <label>Year of purchase
         <input type="number" name="purchase_year" value="{{ p.purchase_year }}" min="1950" max="{{ today.year }}" step="1">
       </label>
       <label>Current price ($)
-        <input type="number" name="current_price" value="{{ p.current_price|int }}" min="1" step="1000">
+        <input type="number" name="current_price" value="{{ p.current_price|int }}" min="0" step="any">
       </label>
     </fieldset>
 
@@ -29,7 +29,7 @@
         <input type="number" name="sale_year" value="{{ p.sale_year }}" min="2027" max="2070" step="1">
       </label>
       <label>Renovation and cleaning cost ($)
-        <input type="number" name="renovation" value="{{ p.renovation|int }}" min="0" step="500">
+        <input type="number" name="renovation" value="{{ p.renovation|int }}" min="0" step="any">
       </label>
       <label>Sale agent fees and marketing (% of sale price)
         <input type="number" name="agent_pct" value="{{ p.agent_pct }}" min="0" max="10" step="0.1">
@@ -39,7 +39,7 @@
     <fieldset>
       <legend>3. Your tax position</legend>
       <label>Other income in the year of sale ($)
-        <input type="number" name="other_income" value="{{ p.other_income|int }}" min="0" step="1000">
+        <input type="number" name="other_income" value="{{ p.other_income|int }}" min="0" step="any">
       </label>
       <p class="hint">Used to work out which tax brackets the gain falls into.</p>
     </fieldset>
@@ -61,7 +61,7 @@
         <input type="number" name="cpi" value="{{ p.cpi }}" min="0" max="15" step="0.1">
       </label>
       <label>Purchase costs paid in {{ p.purchase_year }} ($)
-        <input type="number" name="purchase_costs" value="{{ p.purchase_costs|int }}" min="0" step="500">
+        <input type="number" name="purchase_costs" value="{{ p.purchase_costs|int }}" min="0" step="any">
       </label>
     </div>
     <p class="hint">Stamp duty and legal fees you paid when buying add to your cost base and reduce the gain. The growth rates are planning assumptions, not forecasts.</p>
